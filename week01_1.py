@@ -82,8 +82,23 @@ array2 = np.arange(3)
 print(array1)
 print(array2)
 
-# 2.2 结合 nltk 创建一个数字列表，数字对应前面文本中每个单词的位置，值为该单词出现的次数
-
+# 2.2 结合 nltk 创建两个数字列表，一个记录所有去过重的单词，一个记录他们对应的出现次数
+# 空字典来存储所有去过重的单词和出现次数
+count_dic = {}
+# 如果字典中出现该单词，次数加1；如果没出现，添加到字典，次数设为一
+for sentence in lower_case:
+    for word in sentence:
+        if word in count_dic: count_dic[word] += 1
+        else: count_dic[word] = 1
+print(count_dic)
+# 创建列表来存储出现次数
+word_count_list = np.zeros(len(count_dic))
+# 创建列表来存储去过重的单词
+new_word_list = list(count_dic.keys())
+print(new_word_list)
+for i in range(len(new_word_list)):
+    word_count_list[i] = count_dic[new_word_list[i]]
+print(word_count_list)
 
 
 
