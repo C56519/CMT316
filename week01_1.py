@@ -100,5 +100,19 @@ for i in range(len(new_word_list)):
     word_count_list[i] = count_dic[new_word_list[i]]
 print(word_count_list)
 
-
+# 2.3 练习：分别将每句中的每个词汇出现的次数输出
+count_sentence_dic = {}
+sentence_number = 0
+for sentence in lower_case:
+    count_sentence_dic.clear()
+    sentence_number += 1
+    sentence_word_count = []
+    for word in sentence:
+        if word in count_sentence_dic:
+            count_sentence_dic[word] += 1
+        else:
+            count_sentence_dic[word] = 1
+    for i in sentence:
+        sentence_word_count.append(count_sentence_dic[i])
+    print(f"sentence{sentence_number}: {sentence_word_count}")
 
