@@ -6,7 +6,7 @@ nltk.download('punkt')
 nltk.download('wordnet')
 nltk.download('omw-1.4')
 
-# 1 sltk
+# 1 nltk
 # 1.1 定义一些段落
 sentence1 = "Machine learning is the scientific study of algorithms and statistical models that computer systems use to perform a specific task without using explicit instructions, relying on patterns and inference instead. "
 sentence2 = "It is seen as a subset of artificial intelligence. "
