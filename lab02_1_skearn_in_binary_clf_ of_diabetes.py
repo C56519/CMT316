@@ -21,21 +21,21 @@ dataset_file = response.text.split("\n")
 print(f"Number of patients: {len(dataset_file)}")
 print("The information of the first five patients:")
 for index, people in enumerate(dataset_file[:5]):
-    print(f"parent{index + 1}: {people}")
+    print(f"patient{index + 1}: {people}")
 
 
-# 2 数据预处理
+# 2 处理训练集，建立input和label两个列表
 X_train = []
 Y_train = []
-for parent in dataset_file:
-    this_parent_feature = []
-    this_parent_label = []
-    split_data = parent.split(",")
+for patient in dataset_file:
+    this_patient_feature = []
+    this_patient_label = []
+    split_data = patient.split(",")
     for i in split_data[:-1]:
-        this_parent_feature.append(float(i))
-    this_parent_label.append(int(split_data[-1]))
-    X_train.append(this_parent_feature)
-    Y_train.append(this_parent_label)
+        this_patient_feature.append(float(i))
+    this_patient_label.append(int(split_data[-1]))
+    X_train.append(this_patient_feature)
+    Y_train.append(this_patient_label)
 
 X_train = np.asarray(X_train)
 Y_train = np.asarray(Y_train)
@@ -59,13 +59,13 @@ print (svm_clf.predict([patient_2]))
 ex_x_train = []
 ex_y_train = []
 selected_features = [0, 3, 5]
-for parent in dataset_file:
-    this_parent_feature = []
-    this_parent_label = []
-    split_data = parent.split(",")
+for patient in dataset_file:
+    this_patient_feature = []
+    this_patient_label = []
+    split_data = patient.split(",")
     for i in selected_features:
-        this_parent_feature.append(float(split_data[i]))
-    ex_x_train.append(this_parent_feature)
+        this_patient_feature.append(float(split_data[i]))
+    ex_x_train.append(this_patient_feature)
     ex_y_train.append(int(split_data[-1]))
 
 ex_x_train = np.asarray(ex_x_train)
