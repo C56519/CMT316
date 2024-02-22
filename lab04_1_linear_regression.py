@@ -21,6 +21,8 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import PolynomialFeatures
 from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import Ridge
+from sklearn.linear_model import Lasso
+from sklearn.linear_model import ElasticNet
 
 
 # Linear Regression
@@ -52,6 +54,16 @@ lin_reg.predict(X_reg_predict)
 
 # 2 sklearn 中的 SGDRegressor 随机梯度下降进行线性回归
 # 2.1 配置训练集
+# SGDRegressor() 随机梯度下降
+# 参数：
+# loss: String, 损失函数,常用的损失函数包括 'squared_loss'（平方损失）和 'huber'（Huber 损失）等。默认为 'squared_loss'。
+# penalty：正则化项, 常用的正则化项包括 'l2'（L2 正则化）和 'l1'（L1 正则化）等。默认为 None，表示不使用正则化
+# alpha：正则化参数，控制正则化的强度。较大的 alpha 会增加正则化的强度，降低模型的复杂度。默认为 0.0001。
+# max_iter：最大迭代次数，表示进行优化算法的最大迭代次数。默认为 1000。
+# tol：优化算法的停止条件，表示迭代过程中损失函数的变化小于该值时停止优化。默认为 1e-3。
+# learning_rate：String, 学习率，控制优化算法在每次迭代中更新模型参数的步长大小。默认为 'optimal'，表示自适应学习率。
+# eta0：初始学习率，用于学习率逐渐减小的情况下。默认为 0.01。
+# random_state：随机数种子，用于初始化随机数生成器，以确保结果的可重复性。
 sgd_reg = SGDRegressor(max_iter=50, penalty=None, eta0=0.1, random_state=42)
 sgd_reg.fit(X_reg, Y_reg.ravel())
 sgd_reg.intercept_, sgd_reg.coef_
@@ -73,7 +85,7 @@ X_new_predict = np.linspace(0, 3, 100).reshape(100, 1)
 
 # 3.2 定义一个函数，完成这两个回归，并加入正则化 + 画图
 # 参数
-# regulaization_name: 用于传入的不同回归名，函数内部来进行指定的回归模型
+# regulaization_name: 用于传入的不同回归名，函数内部来进行指定的回归模型, 比如Ridge or Lasso
 # if_polynomial: 是否使用多项式特征扩展
 # alphas: 一个列表，用于sklearn岭回归等函数的参数，来指定正则化强度，强度越大，正则化程度约强
 # **model_kargs: python函数高级用法，属于函数构造器范畴，用于接受所有传入的未指定参数名的参数，形成一个字典
@@ -109,18 +121,55 @@ def train_and_plot_reg_or_polynomial_model(regulaization_name, if_polynomial, al
         plt.plot(X_new_predict, Y_new_predict, style, linewidth, label=r"$\alpha = {}$".format(alpha))
 
     plt.plot(X_new, Y_new, "b.", linewidth=3)
+    # plt.legend(loc, fontsize) 添加图例到图像，参数：loc="location" 设置图例位置；fontsize=int 设置图例字体大小
     plt.legend(loc="upper left", fontsize=15)
+    # plt.legned(xlabel, fontsize) 配置X轴，参数：xlabel="name" 设置x轴名字；fontsize=int 设置图例字体大小
     plt.xlabel("$x_1$", fontsize=18)
+    # plt.axis([xstart, xfinished, ystart, yfinished]) 配置坐标轴显示范围，参数：xstart, xfinished x轴范围, ystart, yfinished y轴范围
     plt.axis([0, 3, 0, 4])
 
+# plt.figure() 绘制画布，创建一个新的图形对象，参数：figsize=(8, 4) 指定了图形的宽度为 8 英寸，高度为 4 英寸
 plt.figure(figsize=(8,4))
+# plt.subplot() 在当前图形中创建一个子图区域，并将其分割为 1 行 2 列的子图布局, 最后一个数字 1 表示当前操作的子图编号
 plt.subplot(121)
+# 使用岭回归
 train_and_plot_reg_or_polynomial_model(Ridge, True, (0, 10, 100), random_state=42)
 plt.ylabel("$y$", rotation=0, fontsize=18)
 plt.subplot(122)
 train_and_plot_reg_or_polynomial_model(Ridge, True, (0, 10**-5, 1), random_state=42)
+# 使用 Lasso 回归
+"""
+plt.subplot(121)
+train_and_plot_reg_or_polynomial_model(Lasso, False, alphas=(0, 0.1, 1), random_state=42)
+plt.ylabel("$y$", rotation=0, fontsize=18)
+plt.subplot(122)
+train_and_plot_reg_or_polynomial_model(Lasso, True, alphas=(0, 10**-7, 1), tol=1, random_state=42)
+"""
+
 
 plt.show()
+
+# 3.3 SGDRegressor 和 岭回归 Lasso回归 的其他参数 和 弹性网
+# (1) 岭回归的 sover="cholesky" 参数
+# 使用线性回归的闭式解 θ = (X^T X)^-1 X^T y
+ridge_reg = Ridge(alpha=1, solver="cholesky", random_state=42)
+ridge_reg.fit(X_new, Y_new)
+print(f"ridge_reg: {ridge_reg.predict([[1.5]])}")
+
+# (2) 演示单独使用 Lasso
+lasso_reg = Lasso(alpha=0.1)
+lasso_reg.fit(X_new, Y_new)
+lasso_reg.predict([[1.5]])
+
+# (2) SGDRegressor 使用penalty参数配置正则化
+sgd_reg_new = SGDRegressor(max_iter=50, tol=1e-3, penalty="l2", random_state=42)
+sgd_reg_new.fit(X_new, Y_new.ravel())
+print(f"sdg_reg: {sgd_reg_new.predict([[1.5]])}")
+
+# (4) Elastic Net 弹性网
+elastic_net = ElasticNet(alpha=0.1, l1_ratio=0.5, random_state=42)
+elastic_net.fit(X_new, Y_new)
+print(f"Elastic_net: {elastic_net.predict([[1.5]])}")
 
 """
 plt.plot(X_reg, Y_reg, "b.")
