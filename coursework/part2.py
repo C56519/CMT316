@@ -9,18 +9,26 @@ from sklearn.metrics import precision_score,recall_score,f1_score,accuracy_score
 from sklearn.metrics import confusion_matrix
 from sklearn.model_selection import KFold
 from sklearn.model_selection import train_test_split
+import gensim.downloader as api
+from sklearn.decomposition import PCA
+from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import Pipeline
 
 nltk.download('stopwords')
 nltk.download('punkt')
 nltk.download('omw-1.4')
 nltk.download('wordnet')
 
-# functions
+embeddings_dictionary = api.load("glove-wiki-gigaword-100")
+
+# 1 functions
 def load_data():
+    """
+    Function: Load all news datasets
+    :return: full_dataset: A list where each element is a tuple, the first item is the content of the news article, and the second item is the classification result of the news article.
+    """
     data_path = "../coursework/bbc"
     categories = [('business', 0), ('entertainment', 1), ('politics', 2), ('sport', 3), ('tech', 4)]
-    news_list = []
-    labels = []
     full_dataset = []
     for category in categories:
         category_path = os.path.join(data_path, category[0])
@@ -28,12 +36,15 @@ def load_data():
             if new.endswith('.txt'):
                 with open(os.path.join(category_path, new), encoding='utf-8', errors='ignore') as f:
                     content = f.read()
-                    news_list.append(content)
-                    labels.append(category[1])
                     full_dataset.append((content, category[1]))
-    return news_list, labels, full_dataset
+    return full_dataset
 
 def get_word_list_in_sentence(string):
+    """
+    Function: Natural Language Preprocessing
+    :param string: A news article.
+    :return: Individual word lists after word splitting, lowercase transfer, removing non-literal information, and removing deactivated words.
+    """
     lemmatizer = nltk.stem.WordNetLemmatizer()
     sentence_split = nltk.tokenize.sent_tokenize(string)
     word_list = []
@@ -43,7 +54,13 @@ def get_word_list_in_sentence(string):
             word_list.append(lemmatizer.lemmatize(word))
     return word_list
 
-def create_dictionary(full_dataset, max_num_features):
+def create_frequency_dictionary(full_dataset, max_num_features):
+    """
+    Function: Creating a Global Dictionary.
+    :param full_dataset: Global dataset.
+    :param max_num_features: Maximum number of words in the frequency dictionary.
+    :return: Frequency dictionary.
+    """
     # Splitting words, eliminating deactivated words, counting frequencies
     word_count_list = {}
     stopwords = set(nltk.corpus.stopwords.words('english'))
@@ -65,32 +82,87 @@ def create_dictionary(full_dataset, max_num_features):
         dictionary.append(word)
     return dictionary
 
-def get_word_vector(vocabulary, string):
-    word_vector = np.zeros(len(vocabulary))
+def get_frequency_vector(dictionary, string):
+    """
+    Function: Processing inputs according to the frequency dictionary.
+    :param dictionary: Frequency dictionary.
+    :param string: The text string to be processed.
+    :return: Processed text vector
+    """
+    word_vector = np.zeros(len(dictionary))
     word_list = get_word_list_in_sentence(string)
-    for index, word in enumerate(vocabulary):
+    for index, word in enumerate(dictionary):
         if word in word_list:
             word_vector[index] = word_list.count(word)  # Count the number of times the word appears in the sentence
     return word_vector
 
-def log_reg_muti_training(full_dataset, dictionary):
+def get_embedding_vector(embeddings_dictionary, string):
+    """
+    Compute the word embedding feature vector for the given text.
+    :param string: String of text.
+    :param embeddings_dictionary: A dictionary that maps words to their coaddrresponding word embedding vectors.
+    :return: Word embedding feature vector for a given text.
+    """
+    word_list = get_word_list_in_sentence(string)
+    embedding_vector = []
+    for word in word_list:
+        if word in embeddings_dictionary and not np.all(embeddings_dictionary[word] == 0):
+            embedding_vector.append(embeddings_dictionary[word])
+    if embedding_vector:
+        embedding_vector = np.mean(embedding_vector, axis=0)
+    else:
+        embedding_vector = np.zeros_like(next(iter(embeddings_dictionary.keys())))
+    if np.isnan(embedding_vector).any():
+        embedding_vector = np.zeros_like(embedding_vector)
+    return embedding_vector
+
+def get_combined_vector(frequency_dictionary, embeddings_dictionary, dataset):
+    """
+    Combine multiple features in a given dataset.
+    :param frequency_dictionary: Frequency_dictionary.
+    :param embeddings_dictionary: Embeddings_dictionary.
+    :param dataset: The given dataset.
+    :return:
+    """
+    X = []
+    Y = []
+    for new in dataset:
+        frequency_vector = get_frequency_vector(frequency_dictionary, new[0])
+        embeddings_vector = get_embedding_vector(embeddings_dictionary, new[0])
+        combined_vector = np.concatenate((frequency_vector, embeddings_vector))
+        X.append(combined_vector)
+        Y.append(new[1])
+    X = np.asarray(X)
+    Y = np.asarray(Y)
+    return X, Y
+
+def log_reg_muti_training(dataset, frequency_dictionary, embeddings_dictionary):
+    """
+    Function: Training logistic regression models
+    :param dataset: Specified data set.
+    :param frequency_dictionary: Frequency dictionary.
+    :return: Well-trained logistic regression classifiers.
+    """
     # Building the training set
-    X_train = []
-    Y_train = []
-    for index, new in enumerate(full_dataset):
-        new_vector = get_word_vector(dictionary, new[0])
-        X_train.append(new_vector)
-        Y_train.append(new[1])
-    X_train = np.asarray(X_train)
-    Y_train = np.asarray(Y_train)
-    # training
-    log_reg_muti = LogisticRegression(multi_class="multinomial", solver='lbfgs', C=10, random_state=42)
-    log_reg_muti.fit(X_train, Y_train)
-    return log_reg_muti
+    X, Y = get_combined_vector(frequency_dictionary, embeddings_dictionary, dataset)
+    pipeline = Pipeline([
+        ("scaler", StandardScaler()),
+        ("pca", PCA(n_components=0.95)),
+        ("logistic", LogisticRegression(multi_class="multinomial", solver='lbfgs', C=10, random_state=42))
+    ])
+    pipeline.fit(X, Y)
+    return pipeline
+
 def kfold_training(training_and_dev_set, k):
+    """
+    Function: k-fold cross-validation, and tuning parameter by grid search.
+    :param training_and_dev_set: The training and development sets of data.
+    :param k: The k value of k-fold.
+    :return: The best classifier with the best parameters is selected after grid search, and its frequency dictionary.
+    """
     best_model = None
     highest_accuracy = 0
-    best_dictionary = []
+    best_frequency_dictionary = []
     # Create a k-fold cross-validator and set k
     kfold = KFold(n_splits=k, shuffle=True, random_state=42)
     # Directly generate a list of indexes for all k-fold cases of training and test set data.
@@ -109,59 +181,38 @@ def kfold_training(training_and_dev_set, k):
                 dev_set.append(new)
         # (2) Training the model under this k
         # Create a global dictionary of reserved keywords under this k
-        dictionary = create_dictionary(training_set, 2000)
+        frequency_dictionary = create_frequency_dictionary(training_set, 2000)
         # Training the model under this k
-        kfold_log_reg_muti_model = log_reg_muti_training(training_set, dictionary)
+        kfold_log_reg_muti_model = log_reg_muti_training(training_set, frequency_dictionary, embeddings_dictionary)
 
         # (3) Use accuracy to validate the performance of the model under this k
-        X_dev = []
-        Y_dev = []
-        for new in dev_set:
-            word_vector = get_word_vector(dictionary, new[0])
-            X_dev.append(word_vector)
-            Y_dev.append(new[1])
-        X_dev = np.asarray(X_dev)
-        Y_dev_gold = np.asarray(Y_dev)
+        X_dev, Y_dev_gold = get_combined_vector(frequency_dictionary, embeddings_dictionary, dev_set)
         Y_dev_predictions = kfold_log_reg_muti_model.predict(X_dev)
         accuracy = accuracy_score(Y_dev_gold, Y_dev_predictions)
         if accuracy > highest_accuracy:
             best_model = kfold_log_reg_muti_model
             highest_accuracy = accuracy
-            best_dictionary = dictionary
+            best_frequency_dictionary = frequency_dictionary
         loop_count += 1
         print(f"The accuracy in {loop_count} training is: {round(accuracy, 3)}")
         print("======================================================================================")
-        print(dictionary[:50])
+        print(frequency_dictionary[:50])
         accuracy_all += accuracy
     # Find the average accuracy
     accuracy_average = round(accuracy_all / k, 3)
     print(f"The average accuracy in k-fold is: {round(accuracy_average, 3)}")
-    print(f"Highest accuracy in k-fold is {round(accuracy_average, 3)}")
-    return best_model, best_dictionary
+    print(f"Highest accuracy in k-fold is {round(highest_accuracy, 3)}")
+    return best_model, best_frequency_dictionary
 
 
-# running
-news_list, labels, full_dataset = load_data()
-"""
-for new in news_list[510:516]:
-    print(new)
-for category in labels[510:516]:
-    print(category)
-for category in full_dataset[900:906]:
-    print(category)
-"""
+# 2 running
+full_dataset = load_data()
+
 training_and_dev_set, test_set = train_test_split(full_dataset, test_size=0.2, random_state=42, shuffle=True)
-clf_model, dictionary = kfold_training(training_and_dev_set, 5)
+clf_model, best_frequency_dictionary= kfold_training(training_and_dev_set, 5)
 
-# test
-X_test = []
-Y_test = []
-for new in test_set:
-    word_vector = get_word_vector(dictionary, new[0])
-    X_test.append(word_vector)
-    Y_test.append(new[1])
-X_test = np.asarray(X_test)
-Y_test_gold = np.asarray(Y_test)
+# 3 test
+X_test, Y_test_gold = get_combined_vector(best_frequency_dictionary, embeddings_dictionary, test_set)
 Y_test_predictions = clf_model.predict(X_test)
 accuracy = accuracy_score(Y_test_gold, Y_test_predictions)
 print(f"The performance of model in test dataset is {round(accuracy, 3)}")
