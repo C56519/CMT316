@@ -9,17 +9,18 @@ from sklearn.metrics import precision_score,recall_score,f1_score,accuracy_score
 from sklearn.metrics import confusion_matrix
 from sklearn.model_selection import KFold
 from sklearn.model_selection import train_test_split
-import gensim.downloader as api
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import Pipeline
+from gensim.models import Word2Vec
+from nltk.sentiment import SentimentIntensityAnalyzer
 
 nltk.download('stopwords')
 nltk.download('punkt')
 nltk.download('omw-1.4')
 nltk.download('wordnet')
+nltk.download('vader_lexicon')
 
-embeddings_dictionary = api.load("glove-wiki-gigaword-100")
 
 # 1 functions
 def load_data():
@@ -96,27 +97,61 @@ def get_frequency_vector(dictionary, string):
             word_vector[index] = word_list.count(word)  # Count the number of times the word appears in the sentence
     return word_vector
 
-def get_embedding_vector(embeddings_dictionary, string):
+def word_embedding_training(dataset):
+    """
+    Function: Training the Word2Vec model.
+    :param dataset: Dataset.
+    :return: Trained model
+    """
+    sentences = []
+    for new in dataset:
+        word_list = get_word_list_in_sentence(new[0])
+        sentences.append(word_list)
+    word2Vec_model = Word2Vec(sentences, vector_size=100, window=5)
+    return word2Vec_model
+
+def get_sentiment_score(string):
+    """
+    Calculating the sentiment score of input text by analyzing each sentence.
+    :param string: input text.
+    :return: Overall sentiment score of the input text.
+    """
+    sia = SentimentIntensityAnalyzer()
+    sentences_list = nltk.tokenize.sent_tokenize(string)
+    sum_score = 0
+    sentiment_scores_original = []
+    sentiment_scores_with_weight = 0
+    for sentence in sentences_list:
+        score_original = sia.polarity_scores(sentence)
+        sentiment_scores_original.append(score_original['compound'])
+        sum_score += abs(score_original['compound'])
+    if sum_score == 0:
+        return 0
+    for score in sentiment_scores_original:
+        weight = abs(score) / sum_score
+        sentiment_scores_with_weight += score * weight
+    return sentiment_scores_with_weight
+
+def get_embedding_vector(word2Vec_model, string):
     """
     Compute the word embedding feature vector for the given text.
     :param string: String of text.
-    :param embeddings_dictionary: A dictionary that maps words to their coaddrresponding word embedding vectors.
+    :param word2Vec_model: Trained Word2Vec model.
     :return: Word embedding feature vector for a given text.
     """
+    dictionary = word2Vec_model.wv
     word_list = get_word_list_in_sentence(string)
-    embedding_vector = []
+    embedding_vector = np.zeros(100)
+    num = 0
+
     for word in word_list:
-        if word in embeddings_dictionary and not np.all(embeddings_dictionary[word] == 0):
-            embedding_vector.append(embeddings_dictionary[word])
-    if embedding_vector:
-        embedding_vector = np.mean(embedding_vector, axis=0)
-    else:
-        embedding_vector = np.zeros_like(next(iter(embeddings_dictionary.keys())))
-    if np.isnan(embedding_vector).any():
-        embedding_vector = np.zeros_like(embedding_vector)
+        if word in dictionary:
+            embedding_vector += dictionary[word]
+            num += 1
+    embedding_vector /= num
     return embedding_vector
 
-def get_combined_vector(frequency_dictionary, embeddings_dictionary, dataset):
+def get_combined_vector(frequency_dictionary, word2Vec_model, dataset):
     """
     Combine multiple features in a given dataset.
     :param frequency_dictionary: Frequency_dictionary.
@@ -126,17 +161,18 @@ def get_combined_vector(frequency_dictionary, embeddings_dictionary, dataset):
     """
     X = []
     Y = []
-    for new in dataset:
+    for index, new in enumerate(dataset):
         frequency_vector = get_frequency_vector(frequency_dictionary, new[0])
-        embeddings_vector = get_embedding_vector(embeddings_dictionary, new[0])
-        combined_vector = np.concatenate((frequency_vector, embeddings_vector))
+        embeddings_vector = get_embedding_vector(word2Vec_model, new[0])
+        sentiment_score = np.array([get_sentiment_score(new[0])])
+        combined_vector = np.concatenate((frequency_vector, embeddings_vector, sentiment_score))
         X.append(combined_vector)
         Y.append(new[1])
     X = np.asarray(X)
     Y = np.asarray(Y)
     return X, Y
 
-def log_reg_muti_training(dataset, frequency_dictionary, embeddings_dictionary):
+def log_reg_muti_training(dataset, frequency_dictionary, word2Vec_model):
     """
     Function: Training logistic regression models
     :param dataset: Specified data set.
@@ -144,10 +180,10 @@ def log_reg_muti_training(dataset, frequency_dictionary, embeddings_dictionary):
     :return: Well-trained logistic regression classifiers.
     """
     # Building the training set
-    X, Y = get_combined_vector(frequency_dictionary, embeddings_dictionary, dataset)
+    X, Y = get_combined_vector(frequency_dictionary, word2Vec_model, dataset)
     pipeline = Pipeline([
         ("scaler", StandardScaler()),
-        ("pca", PCA(n_components=0.95)),
+        ("pca", PCA(n_components=0.8)),
         ("logistic", LogisticRegression(multi_class="multinomial", solver='lbfgs', C=10, random_state=42))
     ])
     pipeline.fit(X, Y)
@@ -163,6 +199,7 @@ def kfold_training(training_and_dev_set, k):
     best_model = None
     highest_accuracy = 0
     best_frequency_dictionary = []
+    word2Vec_model = word_embedding_training(training_and_dev_set)
     # Create a k-fold cross-validator and set k
     kfold = KFold(n_splits=k, shuffle=True, random_state=42)
     # Directly generate a list of indexes for all k-fold cases of training and test set data.
@@ -183,16 +220,17 @@ def kfold_training(training_and_dev_set, k):
         # Create a global dictionary of reserved keywords under this k
         frequency_dictionary = create_frequency_dictionary(training_set, 2000)
         # Training the model under this k
-        kfold_log_reg_muti_model = log_reg_muti_training(training_set, frequency_dictionary, embeddings_dictionary)
+        kfold_log_reg_muti_model = log_reg_muti_training(training_set, frequency_dictionary, word2Vec_model)
 
         # (3) Use accuracy to validate the performance of the model under this k
-        X_dev, Y_dev_gold = get_combined_vector(frequency_dictionary, embeddings_dictionary, dev_set)
+        X_dev, Y_dev_gold = get_combined_vector(frequency_dictionary, word2Vec_model, dev_set)
         Y_dev_predictions = kfold_log_reg_muti_model.predict(X_dev)
         accuracy = accuracy_score(Y_dev_gold, Y_dev_predictions)
         if accuracy > highest_accuracy:
             best_model = kfold_log_reg_muti_model
             highest_accuracy = accuracy
             best_frequency_dictionary = frequency_dictionary
+            best_word2Vec_model = word2Vec_model
         loop_count += 1
         print(f"The accuracy in {loop_count} training is: {round(accuracy, 3)}")
         print("======================================================================================")
@@ -202,17 +240,17 @@ def kfold_training(training_and_dev_set, k):
     accuracy_average = round(accuracy_all / k, 3)
     print(f"The average accuracy in k-fold is: {round(accuracy_average, 3)}")
     print(f"Highest accuracy in k-fold is {round(highest_accuracy, 3)}")
-    return best_model, best_frequency_dictionary
+    return best_model, best_frequency_dictionary, word2Vec_model
 
 
 # 2 running
 full_dataset = load_data()
-
 training_and_dev_set, test_set = train_test_split(full_dataset, test_size=0.2, random_state=42, shuffle=True)
-clf_model, best_frequency_dictionary= kfold_training(training_and_dev_set, 5)
+clf_model, best_frequency_dictionary, word2Vec_model = kfold_training(training_and_dev_set, 5)
 
 # 3 test
-X_test, Y_test_gold = get_combined_vector(best_frequency_dictionary, embeddings_dictionary, test_set)
+X_test, Y_test_gold = get_combined_vector(best_frequency_dictionary, word2Vec_model, test_set)
 Y_test_predictions = clf_model.predict(X_test)
 accuracy = accuracy_score(Y_test_gold, Y_test_predictions)
 print(f"The performance of model in test dataset is {round(accuracy, 3)}")
+print(classification_report(Y_test_gold, Y_test_predictions))
