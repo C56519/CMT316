@@ -14,6 +14,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import Pipeline
 from gensim.models import Word2Vec
 from nltk.sentiment import SentimentIntensityAnalyzer
+from sklearn.model_selection import GridSearchCV, RepeatedKFold
 
 nltk.download('stopwords')
 nltk.download('punkt')
@@ -110,6 +111,26 @@ def word_embedding_training(dataset):
     word2Vec_model = Word2Vec(sentences, vector_size=100, window=5)
     return word2Vec_model
 
+def get_embedding_vector(word2Vec_model, string):
+    """
+    Compute the word embedding feature vector for the given text.
+    :param string: String of text.
+    :param word2Vec_model: Trained Word2Vec model.
+    :return: Word embedding feature vector for a given text.
+    """
+    dictionary = word2Vec_model.wv
+    word_list = get_word_list_in_sentence(string)
+    embedding_vector = np.zeros(100)
+    num = 0
+
+    for word in word_list:
+        if word in dictionary:
+            embedding_vector += dictionary[word]
+            num += 1
+    if num:
+        embedding_vector /= num
+    return embedding_vector
+
 def get_sentiment_score(string):
     """
     Calculating the sentiment score of input text by analyzing each sentence.
@@ -132,30 +153,11 @@ def get_sentiment_score(string):
         sentiment_scores_with_weight += score * weight
     return sentiment_scores_with_weight
 
-def get_embedding_vector(word2Vec_model, string):
-    """
-    Compute the word embedding feature vector for the given text.
-    :param string: String of text.
-    :param word2Vec_model: Trained Word2Vec model.
-    :return: Word embedding feature vector for a given text.
-    """
-    dictionary = word2Vec_model.wv
-    word_list = get_word_list_in_sentence(string)
-    embedding_vector = np.zeros(100)
-    num = 0
-
-    for word in word_list:
-        if word in dictionary:
-            embedding_vector += dictionary[word]
-            num += 1
-    embedding_vector /= num
-    return embedding_vector
-
 def get_combined_vector(frequency_dictionary, word2Vec_model, dataset):
     """
     Combine multiple features in a given dataset.
     :param frequency_dictionary: Frequency_dictionary.
-    :param embeddings_dictionary: Embeddings_dictionary.
+    :param word2Vec_model: Trained Word2Vec model.
     :param dataset: The given dataset.
     :return:
     """
@@ -183,11 +185,19 @@ def log_reg_muti_training(dataset, frequency_dictionary, word2Vec_model):
     X, Y = get_combined_vector(frequency_dictionary, word2Vec_model, dataset)
     pipeline = Pipeline([
         ("scaler", StandardScaler()),
-        ("pca", PCA(n_components=0.8)),
-        ("logistic", LogisticRegression(multi_class="multinomial", solver='lbfgs', C=10, random_state=42))
+        ("pca", PCA()),
+        ("logistic", LogisticRegression(multi_class="multinomial", solver='lbfgs', random_state=42))
     ])
-    pipeline.fit(X, Y)
-    return pipeline
+    parameters_sapce = {
+        "pca__n_components": [0.8, 0.85, 0.9, 0.95],
+        "logistic__C": [0.1, 1, 10, 100]
+    }
+    cv = RepeatedKFold(n_splits=10, n_repeats=5, random_state=1)
+    grid_search = GridSearchCV(pipeline, parameters_sapce, cv=cv, scoring="accuracy", n_jobs=-1)
+    best_model = grid_search.fit(X, Y)
+    print(f"The best parameter: {grid_search.best_params_}")
+    print(f"The best RMSE in training set: {grid_search.best_score_}")
+    return best_model
 
 def kfold_training(training_and_dev_set, k):
     """
@@ -230,7 +240,6 @@ def kfold_training(training_and_dev_set, k):
             best_model = kfold_log_reg_muti_model
             highest_accuracy = accuracy
             best_frequency_dictionary = frequency_dictionary
-            best_word2Vec_model = word2Vec_model
         loop_count += 1
         print(f"The accuracy in {loop_count} training is: {round(accuracy, 3)}")
         print("======================================================================================")
