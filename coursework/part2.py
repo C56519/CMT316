@@ -15,6 +15,7 @@ from sklearn.pipeline import Pipeline
 from gensim.models import Word2Vec
 from nltk.sentiment import SentimentIntensityAnalyzer
 from sklearn.model_selection import GridSearchCV, RepeatedKFold
+from sklearn.feature_selection import chi2, SelectKBest
 
 nltk.download('stopwords')
 nltk.download('punkt')
@@ -190,10 +191,10 @@ def log_reg_muti_training(dataset, frequency_dictionary, word2Vec_model):
     ])
     parameters_sapce = {
         "pca__n_components": [0.8, 0.85, 0.9, 0.95],
-        "logistic__C": [0.1, 1, 10, 100]
+        "logistic__C": [0.1, 0.4, 0.7, 1]
     }
-    cv = RepeatedKFold(n_splits=10, n_repeats=5, random_state=1)
-    grid_search = GridSearchCV(pipeline, parameters_sapce, cv=cv, scoring="accuracy", n_jobs=-1)
+    cv = RepeatedKFold(n_splits=5, n_repeats=3, random_state=1)
+    grid_search = GridSearchCV(pipeline, parameters_sapce, cv=cv, scoring="f1_macro", n_jobs=-1)
     best_model = grid_search.fit(X, Y)
     print(f"The best parameter: {grid_search.best_params_}")
     print(f"The best RMSE in training set: {grid_search.best_score_}")
@@ -207,7 +208,7 @@ def kfold_training(training_and_dev_set, k):
     :return: The best classifier with the best parameters is selected after grid search, and its frequency dictionary.
     """
     best_model = None
-    highest_accuracy = 0
+    highest_f1 = 0
     best_frequency_dictionary = []
     word2Vec_model = word_embedding_training(training_and_dev_set)
     # Create a k-fold cross-validator and set k
@@ -215,7 +216,7 @@ def kfold_training(training_and_dev_set, k):
     # Directly generate a list of indexes for all k-fold cases of training and test set data.
     all_k_index_list_of_training_set_and_dev_set = kfold.split(training_and_dev_set)
     # Training and verifying by each k of iterations
-    accuracy_all = 0
+    f1_all = 0
     loop_count = 0
     for this_k_training_set_index_list, this_k_dev_set_index_list in all_k_index_list_of_training_set_and_dev_set:
         training_set = []
@@ -232,25 +233,24 @@ def kfold_training(training_and_dev_set, k):
         # Training the model under this k
         kfold_log_reg_muti_model = log_reg_muti_training(training_set, frequency_dictionary, word2Vec_model)
 
-        # (3) Use accuracy to validate the performance of the model under this k
+        # (3) Use f1_score to validate the performance of the model under this k
         X_dev, Y_dev_gold = get_combined_vector(frequency_dictionary, word2Vec_model, dev_set)
         Y_dev_predictions = kfold_log_reg_muti_model.predict(X_dev)
-        accuracy = accuracy_score(Y_dev_gold, Y_dev_predictions)
-        if accuracy > highest_accuracy:
+        f1 = f1_score(Y_dev_gold, Y_dev_predictions, average='macro')
+        if f1 > highest_f1:
             best_model = kfold_log_reg_muti_model
-            highest_accuracy = accuracy
+            highest_f1 = f1
             best_frequency_dictionary = frequency_dictionary
         loop_count += 1
-        print(f"The accuracy in {loop_count} training is: {round(accuracy, 3)}")
+        print(f"The f1_score in {loop_count} training is: {round(f1, 3)}")
         print("======================================================================================")
         print(frequency_dictionary[:50])
-        accuracy_all += accuracy
-    # Find the average accuracy
-    accuracy_average = round(accuracy_all / k, 3)
-    print(f"The average accuracy in k-fold is: {round(accuracy_average, 3)}")
-    print(f"Highest accuracy in k-fold is {round(highest_accuracy, 3)}")
+        f1_all += f1
+    # Find the average f1_score
+    f1_average = round(f1_all / k, 3)
+    print(f"The average f1_score in k-fold is: {round(f1_average, 3)}")
+    print(f"Highest f1_score in k-fold is {round(highest_f1, 3)}")
     return best_model, best_frequency_dictionary, word2Vec_model
-
 
 # 2 running
 full_dataset = load_data()
@@ -261,5 +261,16 @@ clf_model, best_frequency_dictionary, word2Vec_model = kfold_training(training_a
 X_test, Y_test_gold = get_combined_vector(best_frequency_dictionary, word2Vec_model, test_set)
 Y_test_predictions = clf_model.predict(X_test)
 accuracy = accuracy_score(Y_test_gold, Y_test_predictions)
-print(f"The performance of model in test dataset is {round(accuracy, 3)}")
+precision = precision_score(Y_test_gold, Y_test_predictions, average='macro')
+recall = recall_score(Y_test_gold, Y_test_predictions, average='macro')
+f1 = f1_score(Y_test_gold, Y_test_predictions, average='macro')
+
+print("Performance of the model on the test set:")
+print(f"Precision: {round(precision, 3)}")
+print(f"Recall: {round(recall, 3)}")
+print(f"F1-Scoure: {round(f1, 3)}")
+print(f"Accuracy: {round(accuracy, 3)}")
+print("Confusion Matrix:")
+print (confusion_matrix(Y_test_gold, Y_test_predictions))
+print("Classification Report:")
 print(classification_report(Y_test_gold, Y_test_predictions))
