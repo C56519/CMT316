@@ -15,7 +15,6 @@ from sklearn.pipeline import Pipeline
 from gensim.models import Word2Vec
 from nltk.sentiment import SentimentIntensityAnalyzer
 from sklearn.model_selection import GridSearchCV, RepeatedKFold
-from sklearn.feature_selection import chi2, SelectKBest
 
 nltk.download('stopwords')
 nltk.download('punkt')
