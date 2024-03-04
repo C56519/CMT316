@@ -44,7 +44,7 @@ def searching_best_model(X_train, Y_train):
     pre_model = Pipeline([
         ("poly_features", PolynomialFeatures(include_bias=False)),
         ("std_scaler", StandardScaler()),
-        ("regul_reg", Ridge(solver="svd"))
+        ("regul_reg", Ridge(solver="svd", alpha=1, fit_intercept=True, random_state=42))
     ])
     cv = RepeatedKFold(n_splits=10, n_repeats=5, random_state=1)
     search = GridSearchCV(pre_model, parameters_space, scoring='neg_root_mean_squared_error', cv=cv, n_jobs=-1)

@@ -228,7 +228,7 @@ def kfold_training(training_and_dev_set, k):
                 dev_set.append(new)
         # (2) Training the model under this k
         # Create a global dictionary of reserved keywords under this k
-        frequency_dictionary = create_frequency_dictionary(training_set, 2000)
+        frequency_dictionary = create_frequency_dictionary(training_set, 1300)
         # Training the model under this k
         kfold_log_reg_muti_model = log_reg_muti_training(training_set, frequency_dictionary, word2Vec_model)
 

@@ -40,12 +40,13 @@ The best accuracy in training set: 0.9381505376344087
 def searching_best_clf_model(X_train, Y_train):
     parameters_space = {
         "svm_clf__C": np.arange(0.01, 5, 0.01),
+        "svm_clf__tol": np.arange(0.01, 0.11, 0.01),
     }
     pre_clf_model = Pipeline([
         ("scalar", StandardScaler()),
-        ("svm_clf", SVC(kernel="rbf", gamma="scale"))
+        ("svm_clf", SVC(kernel="rbf", gamma="scale", C=2, tol=1e-3))
     ])
-    cv = RepeatedStratifiedKFold(n_splits=10, n_repeats=5, random_state=1)
+    cv = RepeatedStratifiedKFold(n_splits=5, n_repeats=3, random_state=1)
     search = GridSearchCV(pre_clf_model, parameters_space, scoring='accuracy', cv=cv, n_jobs=-1)
     best_model = search.fit(X_train, Y_train)
     print(f"The best parameter: {search.best_params_}")
