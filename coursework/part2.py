@@ -16,6 +16,9 @@ from gensim.models import Word2Vec
 from nltk.sentiment import SentimentIntensityAnalyzer
 from sklearn.model_selection import GridSearchCV, RepeatedKFold
 
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.feature_selection import SelectFromModel
+
 nltk.download('stopwords')
 nltk.download('punkt')
 nltk.download('omw-1.4')
@@ -184,11 +187,13 @@ def log_reg_muti_training(dataset, frequency_dictionary, word2Vec_model):
     # Building the training set
     X, Y = get_combined_vector(frequency_dictionary, word2Vec_model, dataset)
     pipeline = Pipeline([
+        ("feature_selection", SelectFromModel(RandomForestClassifier(random_state=42))),
         ("scaler", StandardScaler()),
-        ("pca", PCA()),
+        ("pca", PCA(random_state=42)),
         ("logistic", LogisticRegression(multi_class="multinomial", solver='lbfgs', random_state=42))
     ])
     parameters_sapce = {
+        "feature_selection__estimator__n_estimators": [50, 100, 150, 200],
         "pca__n_components": [0.8, 0.85, 0.9, 0.95],
         "logistic__C": [0.1, 0.4, 0.7, 1]
     }
@@ -196,7 +201,7 @@ def log_reg_muti_training(dataset, frequency_dictionary, word2Vec_model):
     grid_search = GridSearchCV(pipeline, parameters_sapce, cv=cv, scoring="f1_macro", n_jobs=-1)
     best_model = grid_search.fit(X, Y)
     print(f"The best parameter: {grid_search.best_params_}")
-    print(f"The best RMSE in training set: {grid_search.best_score_}")
+    print(f"The best macro averaged f1-score in training set: {round(grid_search.best_score_)}")
     return best_model
 
 def kfold_training(training_and_dev_set, k):
@@ -228,7 +233,7 @@ def kfold_training(training_and_dev_set, k):
                 dev_set.append(new)
         # (2) Training the model under this k
         # Create a global dictionary of reserved keywords under this k
-        frequency_dictionary = create_frequency_dictionary(training_set, 1300)
+        frequency_dictionary = create_frequency_dictionary(training_set, 1500)
         # Training the model under this k
         kfold_log_reg_muti_model = log_reg_muti_training(training_set, frequency_dictionary, word2Vec_model)
 
@@ -241,14 +246,12 @@ def kfold_training(training_and_dev_set, k):
             highest_f1 = f1
             best_frequency_dictionary = frequency_dictionary
         loop_count += 1
-        print(f"The f1_score in {loop_count} training is: {round(f1, 3)}")
-        print("======================================================================================")
-        print(frequency_dictionary[:50])
+        print(f"Verify the macro averaged f1-score in batch {loop_count} is: {round(f1, 3)}")
         f1_all += f1
     # Find the average f1_score
     f1_average = round(f1_all / k, 3)
-    print(f"The average f1_score in k-fold is: {round(f1_average, 3)}")
-    print(f"Highest f1_score in k-fold is {round(highest_f1, 3)}")
+    print(f"The macro averaged f1-score in k-fold is: {round(f1_average, 3)}")
+    print(f"The highest macro averaged f1-score in k-fold is {round(highest_f1, 3)}")
     return best_model, best_frequency_dictionary, word2Vec_model
 
 # 2 running
@@ -260,14 +263,14 @@ clf_model, best_frequency_dictionary, word2Vec_model = kfold_training(training_a
 X_test, Y_test_gold = get_combined_vector(best_frequency_dictionary, word2Vec_model, test_set)
 Y_test_predictions = clf_model.predict(X_test)
 accuracy = accuracy_score(Y_test_gold, Y_test_predictions)
-precision = precision_score(Y_test_gold, Y_test_predictions, average='macro')
-recall = recall_score(Y_test_gold, Y_test_predictions, average='macro')
-f1 = f1_score(Y_test_gold, Y_test_predictions, average='macro')
+macro_averaged_precision = precision_score(Y_test_gold, Y_test_predictions, average='macro')
+macro_averaged_recall = recall_score(Y_test_gold, Y_test_predictions, average='macro')
+macro_averaged_f1 = f1_score(Y_test_gold, Y_test_predictions, average='macro')
 
 print("Performance of the model on the test set:")
-print(f"Precision: {round(precision, 3)}")
-print(f"Recall: {round(recall, 3)}")
-print(f"F1-Scoure: {round(f1, 3)}")
+print(f"Macro averaged precision: {round(macro_averaged_precision, 3)}")
+print(f"Macro averaged recall: {round(macro_averaged_recall, 3)}")
+print(f"Macro averaged F1-Score: {round(macro_averaged_f1, 3)}")
 print(f"Accuracy: {round(accuracy, 3)}")
 print("Confusion Matrix:")
 print (confusion_matrix(Y_test_gold, Y_test_predictions))
